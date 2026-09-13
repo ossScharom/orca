@@ -1,11 +1,6 @@
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { translate } from '@/i18n/i18n'
-import type {
-  CloudTokenKind,
-  JiraConnectMode,
-  JiraInstanceType,
-  ServerAuthMethod
-} from './jira-connect-mode'
+import type { JiraConnectMode, JiraInstanceType, ServerAuthMethod } from './jira-connect-mode'
 
 type JiraConnectModeTogglesProps = {
   mode: JiraConnectMode
@@ -15,7 +10,7 @@ type JiraConnectModeTogglesProps = {
 
 const ITEM_CLASS = 'h-8 px-3 text-xs'
 
-/** Deployment + credential-kind pickers; every change is a whole-mode update. */
+/** Deployment picker, plus the credential picker self-hosted Jira needs; every change is a whole-mode update. */
 export function JiraConnectModeToggles({
   mode,
   disabled,
@@ -49,28 +44,7 @@ export function JiraConnectModeToggles({
           {translate('auto.components.jira.connect.dialog.bc7a831773', 'Self-hosted')}
         </ToggleGroupItem>
       </ToggleGroup>
-      {mode.instanceType === 'cloud' ? (
-        <ToggleGroup
-          type="single"
-          variant="outline"
-          value={mode.cloudTokenKind}
-          disabled={disabled}
-          onValueChange={guard((value) =>
-            onChange({ ...mode, cloudTokenKind: value as CloudTokenKind })
-          )}
-          aria-label={translate(
-            'auto.components.jira.connect.dialog.4823d0100d',
-            'Cloud token type'
-          )}
-        >
-          <ToggleGroupItem value="classic" className={ITEM_CLASS}>
-            {translate('auto.components.jira.connect.dialog.3d81bf3ab3', 'API token')}
-          </ToggleGroupItem>
-          <ToggleGroupItem value="scoped" className={ITEM_CLASS}>
-            {translate('auto.components.jira.connect.dialog.327c8aeb62', 'Scoped API token')}
-          </ToggleGroupItem>
-        </ToggleGroup>
-      ) : (
+      {mode.instanceType === 'server' ? (
         <ToggleGroup
           type="single"
           variant="outline"
@@ -91,7 +65,7 @@ export function JiraConnectModeToggles({
             {translate('auto.components.jira.connect.dialog.84a810dd0e', 'Username & password')}
           </ToggleGroupItem>
         </ToggleGroup>
-      )}
+      ) : null}
     </>
   )
 }

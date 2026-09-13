@@ -4,52 +4,19 @@ import { Button } from '@/components/ui/button'
 import { useCopyFeedbackState } from '@/components/right-sidebar/source-control/notes/copy-feedback'
 import { translate } from '@/i18n/i18n'
 
-// Why: these classic scopes cover every Jira platform endpoint Orca calls; the
-// board API behind column order accepts only the granular Jira Software scopes.
-export const JIRA_SCOPED_TOKEN_REQUIRED_SCOPES = [
-  'read:jira-work',
-  'write:jira-work',
-  'read:jira-user'
-] as const
-export const JIRA_SCOPED_TOKEN_BOARD_SCOPES = [
-  'read:board-scope:jira-software',
-  'read:board-scope.admin:jira-software',
-  'read:project:jira'
-] as const
-
-type ScopeGroup = {
+export type AtlassianTokenScopeGroup = {
   id: string
   label: string
-  copyAllLabel: string
   scopes: readonly string[]
 }
 
-/** Scopes a scoped Atlassian API token needs, each copyable for Atlassian's scope search. */
-export function JiraScopedTokenScopes(): React.JSX.Element {
+/** Scopes an Atlassian API token needs, each copyable for Atlassian's scope search. */
+export function AtlassianTokenScopeList({
+  groups
+}: {
+  groups: readonly AtlassianTokenScopeGroup[]
+}): React.JSX.Element {
   const [copiedId, showCopiedId] = useCopyFeedbackState<string | null>(null)
-  const groups: ScopeGroup[] = [
-    {
-      id: 'required',
-      label: translate('auto.components.jira.scoped.token.scopes.required', 'Required scopes'),
-      copyAllLabel: translate(
-        'auto.components.jira.scoped.token.scopes.copyAllRequired',
-        'Copy all required scopes'
-      ),
-      scopes: JIRA_SCOPED_TOKEN_REQUIRED_SCOPES
-    },
-    {
-      id: 'board',
-      label: translate(
-        'auto.components.jira.scoped.token.scopes.boardOptional',
-        'Optional: board column order'
-      ),
-      copyAllLabel: translate(
-        'auto.components.jira.scoped.token.scopes.copyAllBoard',
-        'Copy all board column order scopes'
-      ),
-      scopes: JIRA_SCOPED_TOKEN_BOARD_SCOPES
-    }
-  ]
 
   const copy = async (text: string, feedbackId: string): Promise<void> => {
     try {
@@ -60,7 +27,7 @@ export function JiraScopedTokenScopes(): React.JSX.Element {
         error instanceof Error
           ? error.message
           : translate(
-              'auto.components.jira.scoped.token.scopes.copyFailed',
+              'auto.components.atlassian.token.scope.list.copyFailed',
               'Failed to copy scopes.'
             )
       )
@@ -69,6 +36,12 @@ export function JiraScopedTokenScopes(): React.JSX.Element {
 
   return (
     <div className="flex flex-col gap-2.5">
+      <p className="text-xs text-muted-foreground">
+        {translate(
+          'auto.components.atlassian.token.scope.list.intro',
+          'If you create the token with scopes, grant these:'
+        )}
+      </p>
       {groups.map((group) => (
         <div key={group.id} className="flex flex-col gap-1.5">
           <div className="flex items-center justify-between gap-2">
@@ -77,13 +50,17 @@ export function JiraScopedTokenScopes(): React.JSX.Element {
               type="button"
               variant="ghost"
               size="xs"
-              aria-label={group.copyAllLabel}
+              aria-label={translate(
+                'auto.components.atlassian.token.scope.list.copyGroup',
+                'Copy all {{value0}} scopes',
+                { value0: group.label }
+              )}
               onClick={() => void copy(group.scopes.join('\n'), group.id)}
             >
               {copiedId === group.id ? <Check /> : <Copy />}
               {copiedId === group.id
-                ? translate('auto.components.jira.scoped.token.scopes.copied', 'Copied')
-                : translate('auto.components.jira.scoped.token.scopes.copyAll', 'Copy all')}
+                ? translate('auto.components.atlassian.token.scope.list.copied', 'Copied')
+                : translate('auto.components.atlassian.token.scope.list.copyAll', 'Copy all')}
             </Button>
           </div>
           <div className="flex flex-wrap gap-1.5">
@@ -95,7 +72,7 @@ export function JiraScopedTokenScopes(): React.JSX.Element {
                 size="xs"
                 className="font-mono text-[11px] font-normal"
                 aria-label={translate(
-                  'auto.components.jira.scoped.token.scopes.copyScope',
+                  'auto.components.atlassian.token.scope.list.copyScope',
                   'Copy {{value0}}',
                   { value0: scope }
                 )}

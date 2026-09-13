@@ -18,6 +18,8 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { cn } from '@/lib/utils'
 import { hasRemoteProviderRuntime } from '@/lib/provider-runtime-context'
 import { translate } from '@/i18n/i18n'
+import { AtlassianTokenScopeList } from '../atlassian-token-scope-list'
+import { bitbucketTokenScopeGroups } from './bitbucket-token-scopes'
 
 const API_TOKEN_DOCS_URL = 'https://support.atlassian.com/bitbucket-cloud/docs/using-api-tokens/'
 
@@ -329,14 +331,17 @@ export function BitbucketCredentialsDialog({
               <p>
                 {isTokenMode
                   ? translate(
-                      'auto.components.settings.bitbucket.credentials.dialog.tokenHintScopes',
-                      'Repository, project, and workspace access tokens are created from the matching Bitbucket settings page; an Atlassian API token with Bitbucket scopes works here too. Give it read:user:bitbucket, read:repository:bitbucket, and read:pullrequest:bitbucket to verify and read, plus write:pullrequest:bitbucket to create pull requests.'
+                      'auto.components.settings.bitbucket.credentials.dialog.tokenHint',
+                      'Repository, project, and workspace access tokens are created from the matching Bitbucket settings page and need read access to pull requests.'
                     )
                   : translate(
-                      'auto.components.settings.bitbucket.credentials.dialog.basicHintScopes',
-                      'Create an Atlassian API token for your account and pair it with the email address that owns it. A scoped token needs read:user:bitbucket, read:repository:bitbucket, read:pullrequest:bitbucket, and write:pullrequest:bitbucket to create pull requests.'
+                      'auto.components.settings.bitbucket.credentials.dialog.basicHint',
+                      'Create an Atlassian API token for your account, then pair it with the email address that owns it.'
                     )}
               </p>
+              {isTokenMode ? null : (
+                <AtlassianTokenScopeList groups={bitbucketTokenScopeGroups()} />
+              )}
               <button
                 type="button"
                 className="inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline"

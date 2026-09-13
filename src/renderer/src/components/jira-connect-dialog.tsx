@@ -23,7 +23,8 @@ import {
   type JiraConnectMode
 } from './jira-connect-mode'
 import { JiraConnectModeToggles } from './jira-connect-mode-toggles'
-import { JiraScopedTokenScopes } from './jira-scoped-token-scopes'
+import { AtlassianTokenScopeList } from './atlassian-token-scope-list'
+import { jiraTokenScopeGroups } from './jira-token-scopes'
 
 type JiraConnectDialogProps = {
   open: boolean
@@ -76,7 +77,7 @@ export function JiraConnectDialog({
   }, [open])
 
   const shape = describeJiraConnectMode(mode)
-  const { isServer, isScopedCloud, needsIdentity, showsIdentity } = shape
+  const { isServer, needsIdentity } = shape
   const copy = jiraConnectCopy(shape)
   const canSubmit =
     Boolean(siteUrl.trim()) &&
@@ -130,7 +131,7 @@ export function JiraConnectDialog({
         siteUrl: trimmedSite,
         // Cloud sends the Atlassian email; self-hosted Basic sends the username;
         // PAT sends nothing, so a stale email can't key/label the stored site.
-        email: showsIdentity ? trimmedEmail : '',
+        email: needsIdentity ? trimmedEmail : '',
         apiToken: trimmedToken,
         authType: shape.authType
       })
@@ -199,7 +200,7 @@ export function JiraConnectDialog({
                 disabled={connectState === 'connecting'}
               />
             </div>
-            {showsIdentity ? (
+            {needsIdentity ? (
               <div className="space-y-2">
                 <Label htmlFor={emailId} className="text-xs">
                   {copy.identityLabel}
@@ -257,15 +258,7 @@ export function JiraConnectDialog({
             ) : (
               <>
                 <p className="text-xs text-muted-foreground">
-                  {isScopedCloud
-                    ? translate(
-                        'auto.components.jira.connect.dialog.cc1ca58cd8',
-                        'Create a token with scopes in'
-                      )
-                    : translate(
-                        'auto.components.jira.connect.dialog.8090504a3e',
-                        'Create a token in'
-                      )}{' '}
+                  {translate('auto.components.jira.connect.dialog.8090504a3e', 'Create a token in')}{' '}
                   <button
                     type="button"
                     className="text-primary underline-offset-2 hover:underline"
@@ -282,7 +275,7 @@ export function JiraConnectDialog({
                   </button>
                   .
                 </p>
-                {isScopedCloud ? <JiraScopedTokenScopes /> : null}
+                <AtlassianTokenScopeList groups={jiraTokenScopeGroups()} />
               </>
             )}
             <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
