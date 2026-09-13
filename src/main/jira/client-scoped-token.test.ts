@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -238,5 +238,74 @@ describe('Jira client scoped Atlassian API tokens', () => {
     const jira = await loadClientModule()
 
     expect(jira.getStatus().sites?.map((entry) => entry.id)).toEqual(['site-ok', 'site-encoded'])
+  })
+
+  function writeScopedSite(): void {
+    const orcaDir = join(tempHome, '.orca')
+    mkdirSync(join(orcaDir, 'jira-tokens'), { recursive: true })
+    writeFileSync(
+      join(orcaDir, 'jira-sites.json'),
+      JSON.stringify({
+        version: 1,
+        activeSiteId: 'site-scoped',
+        selectedSiteId: 'site-scoped',
+        sites: [
+          {
+            id: 'site-scoped',
+            siteUrl: 'https://example.atlassian.net',
+            email: '',
+            displayName: 'Ada',
+            accountId: 'account-alpha',
+            authType: 'cloud-scoped',
+            apiBaseUrl: 'https://api.atlassian.com/ex/jira/cloud-abc'
+          }
+        ]
+      }),
+      { encoding: 'utf-8' }
+    )
+    writeFileSync(tokenPathForSite('site-scoped'), 'scoped-token')
+  }
+
+  it('keeps a scoped site when the gateway rejects one endpoint for a missing scope', async () => {
+    // Why: the board API needs Jira Software scopes the token may not carry; that
+    // gap must not delete a token that still works for every other endpoint.
+    writeScopedSite()
+    netFetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ code: 401, message: 'Unauthorized; scope does not match' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    )
+    const jira = await loadClientModule()
+    const { getProjectStatusOrder } = await import('./jira-transition-queries')
+
+    await expect(getProjectStatusOrder('ENG', 'site-scoped')).resolves.toEqual({
+      statusIdsByColumn: []
+    })
+    expect(netFetchMock.mock.calls[0]?.[0]).toBe(
+      'https://api.atlassian.com/ex/jira/cloud-abc/rest/agile/1.0/board?projectKeyOrId=ENG&maxResults=2'
+    )
+    expect(jira.getStatus().sites?.map((entry) => entry.id)).toEqual(['site-scoped'])
+    expect(existsSync(tokenPathForSite('site-scoped'))).toBe(true)
+  })
+
+  it('still removes a scoped site whose token the gateway rejects outright', async () => {
+    writeScopedSite()
+    netFetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          errorMessages: ['Client must be authenticated to access this resource.']
+        }),
+        { status: 401, headers: { 'Content-Type': 'application/json' } }
+      )
+    )
+    const jira = await loadClientModule()
+    const { getProjectStatusOrder } = await import('./jira-transition-queries')
+
+    await expect(getProjectStatusOrder('ENG', 'site-scoped')).rejects.toMatchObject({
+      status: 401
+    })
+    expect(jira.getStatus().sites ?? []).toEqual([])
+    expect(existsSync(tokenPathForSite('site-scoped'))).toBe(false)
   })
 })
