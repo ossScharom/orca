@@ -39,7 +39,7 @@ vi.mock('@/components/sidebar/CommentMarkdown', () => ({
 }))
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
-function jiraIssue(title: string): JiraIssue {
+function jiraIssue(title: string, overrides: Partial<JiraIssue> = {}): JiraIssue {
   return {
     id: '10001',
     key: 'ENG-1',
@@ -51,9 +51,14 @@ function jiraIssue(title: string): JiraIssue {
     status: { id: '1', name: 'To Do', categoryKey: 'new', categoryName: 'To Do' },
     labels: [],
     updatedAt: '2026-09-01T00:00:00.000Z',
-    createdAt: '2026-09-01T00:00:00.000Z'
+    createdAt: '2026-09-01T00:00:00.000Z',
+    ...overrides
   }
 }
+
+const otherIssue = jiraIssue('Other issue', { id: '10002', key: 'ENG-2' })
+
+let selectIssue = (_issue: JiraIssue): void => undefined
 
 // Why: the task page reads the open issue back out of the Jira store, so an
 // optimistic patch hands the workspace a new object for the same issue.
@@ -61,6 +66,7 @@ function StoreBackedWorkspace({ initial }: { initial: JiraIssue }): React.JSX.El
   const [issue, setIssue] = useState<JiraIssue | null>(initial)
   store.patchJiraIssue = (key, patch) =>
     setIssue((current) => (current?.key === key ? { ...current, ...patch } : current))
+  selectIssue = setIssue
   return (
     <TooltipProvider>
       <JiraIssueWorkspace issue={issue} onUse={vi.fn()} onClose={vi.fn()} />
@@ -167,6 +173,50 @@ describe('JiraIssueWorkspace optimistic edits', () => {
     // The menu stays open after picking a transition, so it must now list the new ones.
     expect(screen.queryByRole('button', { name: 'Start progress' })).toBeNull()
     expect(await screen.findByRole('button', { name: 'Finish' })).toBeDefined()
+  })
+
+  it('still hydrates fields the user did not edit when the initial load lands late', async () => {
+    const initialLoad = deferred<JiraIssue>()
+    runtimeMocks.jiraGetIssue.mockImplementationOnce(() => initialLoad.promise)
+    runtimeMocks.jiraUpdateIssue.mockReturnValue(deferred<{ ok: true }>().promise)
+    render(<StoreBackedWorkspace initial={jiraIssue('Old title')} />)
+    await flushPromises()
+
+    saveTitle('Old title', 'New title')
+    await flushPromises()
+    await act(async () => initialLoad.resolve(jiraIssue('Old title', { labels: ['backend'] })))
+    await flushPromises()
+
+    expect(screen.getByDisplayValue('New title')).toBeDefined()
+    expect(screen.getByDisplayValue('backend')).toBeDefined()
+  })
+
+  it.each([
+    ['succeeds', { ok: true }],
+    ['fails', { ok: false, error: 'Nope' }]
+  ])('stays on the newly opened issue when a save for the previous one %s', async (_, outcome) => {
+    // Why: the task page keeps one workspace instance across selections, so a
+    // save that finishes after switching must not write the old issue back.
+    const update = deferred<typeof outcome>()
+    runtimeMocks.jiraUpdateIssue.mockReturnValue(update.promise)
+    runtimeMocks.jiraGetIssue.mockImplementation(async (_settings: unknown, key: string) =>
+      key === 'ENG-2' ? otherIssue : jiraIssue(serverTitle)
+    )
+    render(<StoreBackedWorkspace initial={jiraIssue('Old title')} />)
+    await flushPromises()
+
+    saveTitle('Old title', 'New title')
+    await flushPromises()
+    await act(async () => selectIssue(otherIssue))
+    await flushPromises()
+    expect(screen.getByText('ENG-2')).toBeDefined()
+    serverTitle = 'New title'
+    await act(async () => update.resolve(outcome))
+    await flushPromises()
+
+    expect(screen.getByText('ENG-2')).toBeDefined()
+    expect(screen.queryByText('ENG-1')).toBeNull()
+    expect(screen.getByDisplayValue('Other issue')).toBeDefined()
   })
 
   it('does not let a slow initial load overwrite a title saved meanwhile', async () => {
