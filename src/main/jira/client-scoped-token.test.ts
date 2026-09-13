@@ -139,6 +139,105 @@ describe('Jira client scoped Atlassian API tokens', () => {
     expect(netFetchMock).toHaveBeenCalledTimes(1)
   })
 
+  function jsonResponse(status: number, body: unknown): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'Content-Type': 'application/json' }
+    })
+  }
+
+  const SITE_REJECTION = {
+    errorMessages: ['Client must be authenticated to access this resource.']
+  }
+
+  function connectCloud(jira: Awaited<ReturnType<typeof loadClientModule>>) {
+    return jira.connect({
+      siteUrl: 'example.atlassian.net',
+      email: 'ada@example.com',
+      apiToken: 'some-token',
+      authType: 'cloud'
+    })
+  }
+
+  it('routes a Cloud token through the gateway when the site host rejects it', async () => {
+    // Why: scoped tokens only work on the gateway, so the dialog does not ask
+    // which kind of token it is; a site-host 401 triggers the gateway attempt.
+    netFetchMock
+      .mockResolvedValueOnce(jsonResponse(401, SITE_REJECTION))
+      .mockResolvedValueOnce(jsonResponse(200, { cloudId: 'cloud-abc' }))
+      .mockResolvedValueOnce(jsonResponse(200, { accountId: 'account-alpha', displayName: 'Ada' }))
+    const jira = await loadClientModule()
+
+    await expect(connectCloud(jira)).resolves.toMatchObject({
+      ok: true,
+      viewer: { displayName: 'Ada' }
+    })
+
+    expect(netFetchMock.mock.calls.map((call) => call[0])).toEqual([
+      'https://example.atlassian.net/rest/api/3/myself',
+      'https://example.atlassian.net/_edge/tenant_info',
+      'https://api.atlassian.com/ex/jira/cloud-abc/rest/api/3/myself'
+    ])
+    const headers = netFetchMock.mock.calls[2]?.[1]?.headers as Headers
+    expect(headers.get('Authorization')).toBe(
+      `Basic ${Buffer.from('ada@example.com:some-token').toString('base64')}`
+    )
+    expect(jira.getStatus().sites?.[0]).toMatchObject({
+      authType: 'cloud-scoped',
+      apiBaseUrl: 'https://api.atlassian.com/ex/jira/cloud-abc'
+    })
+  })
+
+  it('reports the site-host error when the gateway also rejects a Cloud token', async () => {
+    netFetchMock
+      .mockResolvedValueOnce(jsonResponse(401, SITE_REJECTION))
+      .mockResolvedValueOnce(jsonResponse(200, { cloudId: 'cloud-abc' }))
+      .mockResolvedValueOnce(jsonResponse(401, { code: 401, message: 'Unauthorized' }))
+    const jira = await loadClientModule()
+
+    await expect(connectCloud(jira)).resolves.toEqual({
+      ok: false,
+      error: 'Client must be authenticated to access this resource.'
+    })
+    expect(jira.getStatus().sites ?? []).toEqual([])
+  })
+
+  it('reports a missing scope found on the gateway attempt', async () => {
+    netFetchMock
+      .mockResolvedValueOnce(jsonResponse(401, SITE_REJECTION))
+      .mockResolvedValueOnce(jsonResponse(200, { cloudId: 'cloud-abc' }))
+      .mockResolvedValueOnce(
+        jsonResponse(401, { code: 401, message: 'Unauthorized; scope does not match' })
+      )
+    const jira = await loadClientModule()
+
+    const result = await connectCloud(jira)
+
+    expect(result).toMatchObject({ ok: false })
+    expect(result.ok ? '' : result.error).toContain('missing a scope this request needs')
+  })
+
+  it('reports the site-host error when the site has no Atlassian cloud id', async () => {
+    netFetchMock
+      .mockResolvedValueOnce(jsonResponse(401, SITE_REJECTION))
+      .mockResolvedValueOnce(new Response('not found', { status: 404 }))
+    const jira = await loadClientModule()
+
+    await expect(connectCloud(jira)).resolves.toEqual({
+      ok: false,
+      error: 'Client must be authenticated to access this resource.'
+    })
+    expect(netFetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not try the gateway when the site host fails for another reason', async () => {
+    netFetchMock.mockResolvedValueOnce(jsonResponse(500, { errorMessages: ['Internal error'] }))
+    const jira = await loadClientModule()
+
+    await expect(connectCloud(jira)).resolves.toEqual({ ok: false, error: 'Internal error' })
+    expect(netFetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it('re-roots scoped-site attachment URLs from the site host onto the gateway', async () => {
     const jira = await loadClientModule({ encryptionAvailable: true })
     const client = {

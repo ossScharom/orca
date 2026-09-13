@@ -74,6 +74,60 @@ export function getStatus(): JiraConnectionStatus {
   }
 }
 
+type VerifiedCredentials = {
+  viewer: Record<string, unknown>
+  authType: JiraAuthType
+  apiBaseUrl?: string
+}
+
+async function verifyCredentials(
+  siteUrl: string,
+  email: string,
+  apiToken: string,
+  authType: JiraAuthType
+): Promise<VerifiedCredentials> {
+  if (authType === 'cloud-scoped') {
+    // Why: scoped tokens are rejected on the site host with a bare 401, so the
+    // gateway URL is resolved up front and stored alongside the site.
+    const apiBaseUrl = await resolveJiraGatewayBaseUrl(siteUrl)
+    const viewer = await requestWithCredentials(
+      apiBaseUrl,
+      email,
+      apiToken,
+      '/rest/api/3/myself',
+      undefined,
+      authType
+    )
+    return { viewer: viewer as Record<string, unknown>, authType, apiBaseUrl }
+  }
+  const myselfPath = authType === 'server' ? '/rest/api/2/myself' : '/rest/api/3/myself'
+  try {
+    const viewer = await requestWithCredentials(
+      siteUrl,
+      email,
+      apiToken,
+      myselfPath,
+      undefined,
+      authType
+    )
+    return { viewer: viewer as Record<string, unknown>, authType }
+  } catch (siteError) {
+    if (authType !== 'cloud' || !(siteError instanceof JiraApiError) || siteError.status !== 401) {
+      throw siteError
+    }
+    // Why: a scoped token looks like any other Cloud API token to the user, so
+    // instead of asking which kind it is, a site-host 401 retries on the gateway.
+    try {
+      return await verifyCredentials(siteUrl, email, apiToken, 'cloud-scoped')
+    } catch (gatewayError) {
+      // A scope gap proves the token is scoped; otherwise the site verdict is clearer.
+      throw gatewayError instanceof JiraApiError && gatewayError.scopeMismatch
+        ? gatewayError
+        : siteError
+    }
+  }
+}
+
 export async function connect(
   args: JiraConnectArgs
 ): Promise<{ ok: true; viewer: JiraViewer } | { ok: false; error: string }> {
@@ -107,22 +161,9 @@ export async function connect(
 
   await acquire()
   try {
-    // Why: scoped tokens are rejected on the site host with a bare 401, so the
-    // gateway URL is resolved up front and stored alongside the site.
-    const apiBaseUrl =
-      authType === 'cloud-scoped' ? await resolveJiraGatewayBaseUrl(siteUrl) : undefined
-    const myselfPath = authType === 'server' ? '/rest/api/2/myself' : '/rest/api/3/myself'
-    const viewer = toViewer(
-      (await requestWithCredentials(
-        apiBaseUrl ?? siteUrl,
-        email,
-        apiToken,
-        myselfPath,
-        undefined,
-        authType
-      )) as Record<string, unknown>,
-      email || siteUrl
-    )
+    const verified = await verifyCredentials(siteUrl, email, apiToken, authType)
+    const { apiBaseUrl } = verified
+    const viewer = toViewer(verified.viewer, email || siteUrl)
     // PAT sites have no email, so keying on it alone would collide every PAT
     // connection to the same host into one id (silently overwriting a prior
     // account + token). Fall back to the verified viewer identity so distinct
@@ -134,7 +175,7 @@ export async function connect(
       email,
       displayName: viewer.displayName,
       accountId: viewer.accountId,
-      authType,
+      authType: verified.authType,
       ...(apiBaseUrl ? { apiBaseUrl } : {})
     }
     saveToken(id, apiToken)
