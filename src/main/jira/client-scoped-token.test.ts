@@ -289,6 +289,54 @@ describe('Jira client scoped Atlassian API tokens', () => {
     expect(existsSync(tokenPathForSite('site-scoped'))).toBe(true)
   })
 
+  it('explains a missing scope when a scoped-token write is rejected', async () => {
+    writeScopedSite()
+    netFetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ code: 401, message: 'Unauthorized; scope does not match' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    )
+    const jira = await loadClientModule()
+    const { updateIssue } = await import('./jira-issue-mutations')
+
+    const result = await updateIssue('ENG-1', { title: 'Renamed' }, 'site-scoped')
+
+    expect(result).toMatchObject({ ok: false })
+    const error = result.ok ? '' : result.error
+    expect(error).toContain('missing a scope this request needs')
+    expect(error).toContain('scopes listed in the Jira connect dialog')
+    expect(error).toContain('scope does not match')
+    expect(jira.getStatus().sites?.map((entry) => entry.id)).toEqual(['site-scoped'])
+  })
+
+  it('explains a missing scope when connecting a scoped token', async () => {
+    netFetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ cloudId: 'cloud-abc' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ code: 401, message: 'Unauthorized; scope does not match' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      )
+    const jira = await loadClientModule()
+
+    const result = await jira.connect({
+      siteUrl: 'example.atlassian.net',
+      email: '',
+      apiToken: 'scoped-token',
+      authType: 'cloud-scoped'
+    })
+
+    expect(result).toMatchObject({ ok: false })
+    expect(result.ok ? '' : result.error).toContain('missing a scope this request needs')
+  })
+
   it('still removes a scoped site whose token the gateway rejects outright', async () => {
     writeScopedSite()
     netFetchMock.mockResolvedValueOnce(

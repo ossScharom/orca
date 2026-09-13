@@ -30,10 +30,13 @@ export function apiBaseUrl(site: JiraSite): string {
 
 export class JiraApiError extends Error {
   status: number | null
+  /** The api.atlassian.com gateway refused a scoped token that lacks this endpoint's scope. */
+  scopeMismatch: boolean
 
-  constructor(message: string, status: number | null = null) {
+  constructor(message: string, status: number | null = null, scopeMismatch = false) {
     super(message)
     this.status = status
+    this.scopeMismatch = scopeMismatch
   }
 }
 
@@ -119,7 +122,7 @@ export async function requestWithCredentials(
     headers
   })
   if (!response.ok) {
-    throw new JiraApiError(await readJiraError(response), response.status)
+    throw await toJiraApiError(response)
   }
   if (response.status === 204) {
     return null
@@ -148,6 +151,20 @@ async function readJiraError(response: Response): Promise<string> {
   return response.statusText || `Jira request failed (${response.status})`
 }
 
+async function toJiraApiError(response: Response): Promise<JiraApiError> {
+  const message = await readJiraError(response)
+  // Why: the gateway answers a scope gap with a bare "Unauthorized" 401, which
+  // reads like a dead token; name the fix and keep Atlassian's text for support.
+  if (response.status === 401 && /scope does not match/i.test(message)) {
+    return new JiraApiError(
+      `Your scoped API token is missing a scope this request needs. Create a token with the scopes listed in the Jira connect dialog. (Atlassian: ${message})`,
+      response.status,
+      true
+    )
+  }
+  return new JiraApiError(message, response.status)
+}
+
 export async function jiraRequest<T>(
   client: JiraClientForSite,
   path: string,
@@ -163,7 +180,7 @@ export async function jiraRequest<T>(
     headers
   })
   if (!response.ok) {
-    throw new JiraApiError(await readJiraError(response), response.status)
+    throw await toJiraApiError(response)
   }
   if (response.status === 204) {
     return null as T
@@ -209,7 +226,7 @@ export async function jiraRequestBinary(
   headers.set('Authorization', client.authorization)
   const response = await jiraFetch(requestUrl.toString(), { headers })
   if (!response.ok) {
-    throw new JiraApiError(await readJiraError(response), response.status)
+    throw await toJiraApiError(response)
   }
   const contentType = response.headers.get('content-type') || 'application/octet-stream'
   return {

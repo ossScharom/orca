@@ -222,9 +222,5 @@ export function isAuthError(error: unknown): boolean {
   // succeeds, so only 401 means the saved credential itself is invalid. The
   // api.atlassian.com gateway also answers 401 when a scoped token lacks one
   // endpoint's scope; that token still works elsewhere, so it is not revoked.
-  return (
-    error instanceof JiraApiError &&
-    error.status === 401 &&
-    !/scope does not match/i.test(error.message)
-  )
+  return error instanceof JiraApiError && error.status === 401 && !error.scopeMismatch
 }
