@@ -23,6 +23,7 @@ import {
   type JiraConnectMode
 } from './jira-connect-mode'
 import { JiraConnectModeToggles } from './jira-connect-mode-toggles'
+import { JiraScopedTokenScopes } from './jira-scoped-token-scopes'
 
 type JiraConnectDialogProps = {
   open: boolean
@@ -254,37 +255,35 @@ export function JiraConnectDialog({
                 )}
               </p>
             ) : (
-              <p className="text-xs text-muted-foreground">
-                {isScopedCloud
-                  ? translate(
-                      'auto.components.jira.connect.dialog.cc1ca58cd8',
-                      'Create a token with scopes in'
-                    )
-                  : translate(
-                      'auto.components.jira.connect.dialog.8090504a3e',
-                      'Create a token in'
-                    )}{' '}
-                <button
-                  type="button"
-                  className="text-primary underline-offset-2 hover:underline"
-                  onClick={() =>
-                    window.api.shell.openUrl(
-                      'https://id.atlassian.com/manage-profile/security/api-tokens'
-                    )
-                  }
-                >
-                  {translate(
-                    'auto.components.jira.connect.dialog.fdd26d81cc',
-                    'Atlassian account settings'
-                  )}
-                </button>
-                {isScopedCloud
-                  ? ` ${translate(
-                      'auto.components.jira.connect.dialog.fbf2400a02',
-                      'and grant read:jira-work, write:jira-work, and read:jira-user.'
-                    )}`
-                  : '.'}
-              </p>
+              <>
+                <p className="text-xs text-muted-foreground">
+                  {isScopedCloud
+                    ? translate(
+                        'auto.components.jira.connect.dialog.cc1ca58cd8',
+                        'Create a token with scopes in'
+                      )
+                    : translate(
+                        'auto.components.jira.connect.dialog.8090504a3e',
+                        'Create a token in'
+                      )}{' '}
+                  <button
+                    type="button"
+                    className="text-primary underline-offset-2 hover:underline"
+                    onClick={() =>
+                      window.api.shell.openUrl(
+                        'https://id.atlassian.com/manage-profile/security/api-tokens'
+                      )
+                    }
+                  >
+                    {translate(
+                      'auto.components.jira.connect.dialog.fdd26d81cc',
+                      'Atlassian account settings'
+                    )}
+                  </button>
+                  .
+                </p>
+                {isScopedCloud ? <JiraScopedTokenScopes /> : null}
+              </>
             )}
             <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
               <Lock className="size-3 shrink-0" />

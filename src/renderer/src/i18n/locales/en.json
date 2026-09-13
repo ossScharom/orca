@@ -16355,8 +16355,21 @@
             "327c8aeb62": "Scoped API token",
             "b4303bfe5a": "Atlassian email (optional)",
             "8d9f6669a7": "Atlassian API token with scopes",
-            "cc1ca58cd8": "Create a token with scopes in",
-            "fbf2400a02": "and grant read:jira-work, write:jira-work, and read:jira-user."
+            "cc1ca58cd8": "Create a token with scopes in"
+          }
+        },
+        "scoped": {
+          "token": {
+            "scopes": {
+              "required": "Required scopes",
+              "boardOptional": "Optional: board column order",
+              "copyAllRequired": "Copy all required scopes",
+              "copyAllBoard": "Copy all board column order scopes",
+              "copyAll": "Copy all",
+              "copied": "Copied",
+              "copyScope": "Copy {{value0}}",
+              "copyFailed": "Failed to copy scopes."
+            }
           }
         }
       },
