@@ -212,19 +212,31 @@ describe('Jira client scoped Atlassian API tokens', () => {
         selectedSiteId: 'site-ok',
         sites: [
           site('site-ok', 'https://api.atlassian.com/ex/jira/cloud-abc'),
+          site('site-encoded', 'https://api.atlassian.com/ex/jira/cloud%20abc'),
           site('site-host', 'https://evil.example.com/ex/jira/cloud-abc'),
           site('site-port', 'https://api.atlassian.com:8443/ex/jira/cloud-abc'),
           site('site-path', 'https://api.atlassian.com/ex/jira/cloud-abc/extra'),
-          site('site-http', 'http://api.atlassian.com/ex/jira/cloud-abc')
+          site('site-http', 'http://api.atlassian.com/ex/jira/cloud-abc'),
+          site('site-bad-escape', 'https://api.atlassian.com/ex/jira/cloud%ZZabc'),
+          site('site-trailing-percent', 'https://api.atlassian.com/ex/jira/cloud-abc%')
         ]
       }),
       { encoding: 'utf-8' }
     )
-    for (const id of ['site-ok', 'site-host', 'site-port', 'site-path', 'site-http']) {
+    for (const id of [
+      'site-ok',
+      'site-encoded',
+      'site-host',
+      'site-port',
+      'site-path',
+      'site-http',
+      'site-bad-escape',
+      'site-trailing-percent'
+    ]) {
       writeFileSync(tokenPathForSite(id), 'scoped-token')
     }
     const jira = await loadClientModule()
 
-    expect(jira.getStatus().sites?.map((entry) => entry.id)).toEqual(['site-ok'])
+    expect(jira.getStatus().sites?.map((entry) => entry.id)).toEqual(['site-ok', 'site-encoded'])
   })
 })
