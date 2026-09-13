@@ -39,6 +39,26 @@ type JiraIssueWorkspaceProps = {
   sourceContext?: TaskSourceContext | null
 }
 
+// Why: a detail load that started before an optimistic edit must not revert the
+// edited fields; the post-save refresh brings the server's version instead.
+function mergeJiraIssueHydration(
+  fetched: JiraIssue,
+  current: JiraIssue | null,
+  hasEdited: boolean
+): JiraIssue {
+  if (!hasEdited || !current) {
+    return fetched
+  }
+  return {
+    ...fetched,
+    title: current.title,
+    labels: current.labels,
+    status: current.status,
+    priority: current.priority,
+    assignee: current.assignee
+  }
+}
+
 export default function JiraIssueWorkspace({
   issue,
   onUse,
@@ -66,6 +86,13 @@ export default function JiraIssueWorkspace({
 
   const displayed = fullIssue ?? issue
   const siteId = displayed?.siteId ?? undefined
+  // Why: the task page reads the open issue back out of the Jira store, so every
+  // patch hands in a new object; only a different issue or host reloads detail.
+  const requestKey = issue
+    ? `${sourceContext?.hostId ?? settings?.activeRuntimeEnvironmentId ?? 'local'}:${issue.siteId ?? 'selected'}:${issue.key}`
+    : null
+  const loadedRequestKeyRef = useRef<string | null>(null)
+  const hasEditedRef = useRef(false)
 
   const loadComments = useCallback(
     async (targetIssue: JiraIssue, requestId: number): Promise<void> => {
@@ -97,6 +124,7 @@ export default function JiraIssueWorkspace({
 
   useEffect(() => {
     if (!issue) {
+      loadedRequestKeyRef.current = null
       setFullIssue(null)
       setIssueLoading(false)
       setComments([])
@@ -108,10 +136,15 @@ export default function JiraIssueWorkspace({
       optimisticCommentsRef.current = []
       return
     }
+    if (loadedRequestKeyRef.current === requestKey) {
+      return
+    }
+    loadedRequestKeyRef.current = requestKey
 
     requestIdRef.current += 1
     const requestId = requestIdRef.current
     optimisticCommentsRef.current = []
+    hasEditedRef.current = false
     setFullIssue(issue)
     setTitleDraft(issue.title)
     setLabelsDraft(issue.labels.join(', '))
@@ -125,9 +158,12 @@ export default function JiraIssueWorkspace({
           return
         }
         if (result) {
-          setFullIssue(result)
-          setTitleDraft(result.title)
-          setLabelsDraft(result.labels.join(', '))
+          const hasEdited = hasEditedRef.current
+          setFullIssue((current) => mergeJiraIssueHydration(result, current, hasEdited))
+          if (!hasEdited) {
+            setTitleDraft(result.title)
+            setLabelsDraft(result.labels.join(', '))
+          }
         }
       })
       .catch(() => {})
@@ -153,7 +189,7 @@ export default function JiraIssueWorkspace({
       .catch(() => {})
 
     void loadComments(issue, requestId)
-  }, [issue, loadComments, providerSettings])
+  }, [issue, loadComments, providerSettings, requestKey])
 
   const refreshIssue = useCallback(async (): Promise<void> => {
     if (!displayed) {
@@ -170,6 +206,23 @@ export default function JiraIssueWorkspace({
     }
   }, [displayed, patchJiraIssue, providerSettings, sourceContext])
 
+  // Why: Jira only offers transitions out of the current status, so a status
+  // change invalidates the list loaded when the issue opened.
+  const refreshTransitions = useCallback(async (): Promise<void> => {
+    if (!displayed) {
+      return
+    }
+    const requestId = requestIdRef.current
+    try {
+      const next = await jiraListTransitions(providerSettings, displayed.key, displayed.siteId)
+      if (requestId === requestIdRef.current) {
+        setTransitions(next)
+      }
+    } catch {
+      // Keep the current list if the reload fails.
+    }
+  }, [displayed, providerSettings])
+
   const mutateIssue = useCallback(
     async (
       field: string,
@@ -180,6 +233,7 @@ export default function JiraIssueWorkspace({
         return
       }
       setPendingField(field)
+      hasEditedRef.current = true
       const previous = displayed
       try {
         if (optimistic) {
@@ -191,8 +245,13 @@ export default function JiraIssueWorkspace({
           throw new Error(result.error)
         }
         await refreshIssue()
+        if (updates.transitionId) {
+          await refreshTransitions()
+        }
       } catch (error) {
         setFullIssue(previous)
+        setTitleDraft(previous.title)
+        setLabelsDraft(previous.labels.join(', '))
         patchJiraIssue(previous.key, previous, { sourceContext })
         toast.error(
           error instanceof Error
@@ -206,7 +265,16 @@ export default function JiraIssueWorkspace({
         setPendingField(null)
       }
     },
-    [displayed, patchJiraIssue, pendingField, refreshIssue, providerSettings, siteId, sourceContext]
+    [
+      displayed,
+      patchJiraIssue,
+      pendingField,
+      refreshIssue,
+      refreshTransitions,
+      providerSettings,
+      siteId,
+      sourceContext
+    ]
   )
 
   const handleSaveTitle = useCallback(() => {
